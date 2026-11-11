@@ -105,7 +105,8 @@ async function ensureChrome(account) {
       "--no-first-run",
       "--no-default-browser-check",
       "--disable-background-networking",
-      "about:blank",
+      // 直接开 Gemini，避免新账号停在一个空白页不知道下一步做什么
+      "https://gemini.google.com/app?hl=zh-CN",
     ],
     { detached: true, stdio: "ignore" },
   );
@@ -118,6 +119,24 @@ async function ensureChrome(account) {
     } catch {}
   }
   throw new Error(`Chrome 启动超时（${account.name}）`);
+}
+
+/** 新账号/掉登录时，把窗口导航到 Gemini 的对话页，方便用户直接登录 */
+async function openLoginPage(account) {
+  try {
+    await ensureChrome(account);
+    const session = await Session.open(account.port);
+    try {
+      const url = await session.evaluate("location.href");
+      if (!/gemini\.google\.com/.test(url)) {
+        await session.goto("https://gemini.google.com/app?hl=zh-CN");
+      }
+    } finally {
+      session.close();
+    }
+  } catch (e) {
+    log(`打开登录页失败：${e.message}`);
+  }
 }
 
 async function pageTarget(port) {
@@ -1132,7 +1151,7 @@ const server = http.createServer(async (req, res) => {
     };
     accounts.push(account);
     saveAccounts(accounts);
-    ensureChrome(account).catch((e) => log(`打开登录窗口失败：${e.message}`));
+    openLoginPage(account);
     return json(res, 200, { account: accountView().find((a) => a.id === id) });
   }
 
