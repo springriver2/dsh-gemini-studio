@@ -1,0 +1,60 @@
+{
+  "name": "dsh-gemini-studio",
+  "version": "0.3.0",
+  "type": "module",
+  "description": "在 DeepSeek Harness 里用自己已登录的 Gemini 网页账号出图出片，并在本机合成带转场/配音/字幕的成片。",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "py/*.py",
+    "py/NOTICE.md",
+    "bridge/*.mjs",
+    "skills-video-production/**/*",
+    "docs/*.md",
+    "README.md",
+    "LICENSE",
+    "THIRD-PARTY.md",
+    "CHANGELOG.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
+    }
+  },
+  "license": "MIT",
+  "author": {
+    "name": "spring river"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "gemini",
+    "video",
+    "image",
+    "ffmpeg",
+    "tts",
+    "short-drama"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/springriver2/dsh-gemini-studio.git"
+  },
+  "homepage": "https://github.com/springriver2/dsh-gemini-studio#readme"
+}

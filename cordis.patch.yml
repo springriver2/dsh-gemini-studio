@@ -1,0 +1,9 @@
+# dsh-gemini-studio bundle patch
+# bridgeDir 留空 = 用包内自带的 bridge/，开箱即用；要复用外部桥再填绝对路径。
+- insert:
+    - id: gemini-studio
+      name: dsh-gemini-studio
+      config:
+        bridgePort: 8787
+        bridgeDir: ""
+        autoStart: true
