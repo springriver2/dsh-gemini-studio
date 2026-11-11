@@ -35,6 +35,8 @@
 - macOS + Google Chrome（桥用独立 profile 驱动 Chrome，**必须有界面**）
 - Node.js 22+
 - Python 3.12+ 与 Pillow（DSH 自带运行时已包含，插件会自动优先使用它）
+- **系统权限**：只需要可选的「辅助功能」+「自动化」，用于自动往文件框里填首帧路径；
+  不需要屏幕录制、不需要完全磁盘访问。完整清单见 [docs/PERMISSIONS.md](docs/PERMISSIONS.md)
 
 ### 2. 装进 DSH
 
@@ -115,6 +117,7 @@ plugin_manager install_bundle /绝对路径/dsh-gemini-studio
 - **多账号**只是轮换额度，不解决「同一出口 IP」的关联风险
 - 原生语音**跨镜音色可能漂移**（每次生成独立推理），要绝对一致就一条镜头一条镜头地听
 - 首帧挂图依赖 Gemini 的拖放/文件框，偶尔会失效，详见 [故障排查](docs/TROUBLESHOOTING.md)
+- 没给「辅助功能/自动化」时，带首帧的生成会退化成纯文生视频（人物一致性会掉）
 
 ---
 
@@ -127,6 +130,7 @@ dsh-gemini-studio/
 ├── bridge/                   Gemini 网页桥（CDP 驱动 Chrome，自带，可替换）
 ├── py/                       合成 / 运镜 / 核验 / TTS 脚本（含第三方 MIT 代码，见 THIRD-PARTY.md）
 ├── skills-video-production/  内置的短剧制作规范（安装时自动注册成技能）
+├── docs/PERMISSIONS.md       需要哪些系统权限
 ├── docs/TROUBLESHOOTING.md   踩过的坑与处置
 └── cordis.patch.yml          Loader 行
 ```
