@@ -462,41 +462,76 @@ async function typeAndSend(session, prompt) {
   return `c_${(href.match(/\/app\/([0-9a-f]{8,})/) || [])[1]}`;
 }
 
-async function pickTool(session, label) {
-  await waitFor(
-    session,
-    `!!([...document.querySelectorAll("button")].find(x => /上传和工具/.test(x.getAttribute("aria-label") || "")))`,
-    20000,
-    "工具按钮",
-  );
-  await clickElement(
-    session,
-    `[...document.querySelectorAll("button")].find(x => /上传和工具/.test(x.getAttribute("aria-label") || ""))`,
-    "工具按钮",
-  );
-  await pause(700, 1700);
-  await waitFor(
-    session,
-    `!!([...document.querySelectorAll("[role='menuitem'],[role='menuitemcheckbox'],button")]
-      .find(x => new RegExp("^" + ${JSON.stringify(label)}).test(((x.getAttribute("aria-label") || "") + " " + (x.innerText || "")).replace(/\\s+/g, " ").trim())))`,
-    15000,
-    label,
-  );
-  await clickElement(
-    session,
-    `[...document.querySelectorAll("[role='menuitem'],[role='menuitemcheckbox'],button")]
-      .find(x => new RegExp("^" + ${JSON.stringify(label)}).test(((x.getAttribute("aria-label") || "") + " " + (x.innerText || "")).replace(/\\s+/g, " ").trim()))`,
-    label,
-  );
+// 两个页面的「加号」不是同一个控件：/app 叫「上传和工具」，/videos 叫「添加文件」。
+const TOOLS_BUTTON = `[...document.querySelectorAll("button")].filter((b) => b.offsetWidth)
+  .find((x) => /上传和工具|添加文件|上传文件|add file/i.test(x.getAttribute("aria-label") || ""))`;
+
+const menuItem = (label) => `[...document.querySelectorAll("[role='menuitem'],[role='menuitemcheckbox'],[role='menuitemradio'],button")]
+  .filter((e) => e.offsetWidth)
+  .find((x) => new RegExp("^" + ${JSON.stringify(label)}).test(((x.getAttribute("aria-label") || "") + " " + (x.innerText || "")).replace(/\s+/g, " ").trim()))`;
+
+async function pressEscape(session) {
+  try {
+    await session.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    await session.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  } catch {}
 }
 
-/** 首次提问的 hash -> 会话 id，用来把同一段对话接到同一个 Gemini 会话上 */
-const textThreads = new Map();
+/** 点加号，确认菜单真的弹出来了 */
+async function openToolsMenu(session) {
+  for (let i = 0; i < 3; i++) {
+    try {
+      await waitFor(session, `!!(${TOOLS_BUTTON})`, 12000, "加号按钮");
+      await clickElement(session, TOOLS_BUTTON, "加号按钮");
+      await pause(700, 1400);
+      const opened = await session.evaluate(
+        `document.querySelectorAll("[role='menuitem'],[role='menuitemcheckbox']").length > 0 || !!document.querySelector("[role='menu']")`,
+      );
+      if (opened) return true;
+    } catch {}
+    await pause(600, 1200);
+  }
+  return false;
+}
 
-function threadKey(messages) {
-  const firstUser = messages.find((m) => m.role === "user")?.content || "";
-  const system = messages.find((m) => m.role === "system")?.content || "";
-  return crypto.createHash("sha1").update(`${system}\u0000${firstUser}`).digest("hex").slice(0, 16);
+async function pickTool(session, label) {
+  const opened = await openToolsMenu(session);
+  if (!opened) {
+    throw new Error("菜单没弹出来：点了加号但没出现菜单。页面可能还在加载或被浮层挡住，等几秒重试一次即可（不要连续重试）");
+  }
+  const has = await waitFor(session, `!!(${menuItem(label)})`, 6000, label)
+    .then(() => true)
+    .catch(() => false);
+  if (!has) {
+    await pressEscape(session);
+    throw new Error(`当前页面没有「${label}」入口`);
+  }
+  await clickElement(session, menuItem(label), label);
+}
+
+/** 图片入口在两个页面都可能存在：先在 /app 找，找不到换 /videos */
+async function ensureImageSurface(session) {
+  const surfaces = ["https://gemini.google.com/app?hl=zh-CN", "https://gemini.google.com/videos?hl=zh-CN"];
+  for (const url of surfaces) {
+    await session.goto(url);
+    await pause(1600, 2600);
+    try {
+      await waitFor(session, `!!document.querySelector(".ql-editor")`, 30000, "输入框就绪");
+    } catch {
+      continue;
+    }
+    const opened = await openToolsMenu(session);
+    if (!opened) continue;
+    const has = await waitFor(session, `!!(${menuItem("制作图片")})`, 3500, "制作图片")
+      .then(() => true)
+      .catch(() => false);
+    await pressEscape(session);
+    if (has) {
+      log(`  图片入口在 ${url.includes("/videos") ? "/videos" : "/app"}`);
+      return url;
+    }
+  }
+  throw new QuotaError("这个账号没有「制作图片」入口：额度用尽或账号被限制。换账号或等冷却，不要重试");
 }
 
 async function runText(session, messages, timeoutMs) {
@@ -610,7 +645,7 @@ async function materializeImages(list, prefix = "ref") {
 }
 
 async function runImage(session, prompt, timeoutMs, imagePaths = []) {
-  await newChat(session);
+  await ensureImageSurface(session);
   if (imagePaths.length) {
     await attachImage(session, imagePaths[0]);
     await waitFor(session, `!!document.querySelector(".ql-editor")`, 20000, "输入框就绪（带参考图）");
