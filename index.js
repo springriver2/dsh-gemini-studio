@@ -228,8 +228,19 @@ export function apply(ctx, config = {}) {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
-      timeoutMs: 360000,
+      timeoutMs: 30000,
     });
+    if (!data?.id) throw new Error("桥没有返回任务 id");
+    // 出图现在是任务化的：提交后轮询，桥占着账号也只会是它自己的事，
+    // 不会因为客户端超时把 busy 泄漏给别人。
+    let info = data;
+    for (let i = 0; i < 200; i++) {
+      await wait(3000);
+      info = await call(`/task/${encodeURIComponent(data.id)}`, { timeoutMs: 20000 });
+      if (info.status === "failed") throw new Error(`出图失败：${info.error || "未知原因"}`);
+      if (info.status === "completed") break;
+    }
+    if (info?.status !== "completed") throw new Error("出图超时（等了 10 分钟）");
     const res = await fetch(`${base}/media/${encodeURIComponent(data.id)}.png`, {
       signal: AbortSignal.timeout(120000),
     });
@@ -239,7 +250,7 @@ export function apply(ctx, config = {}) {
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, `${data.id}.png`);
     fs.writeFileSync(file, buf);
-    return { id: data.id, file, bytes: buf.length, width: data.width, height: data.height, account: data.account };
+    return { id: data.id, file, bytes: buf.length, width: info.width, height: info.height, account: info.account };
   }
 
   ctx.effect(() =>
@@ -716,7 +727,7 @@ export function apply(ctx, config = {}) {
           return [{ type: "text", text: `配音已生成：${v.file}（${v.seconds ?? "?"} 秒，${(v.bytes / 1024).toFixed(0)} KB）` }];
         },
       },
-      timeoutMs: 240000,
+      timeoutMs: 400000,
       execute: async (args, exec) => {
         const text = String(args.text || "").trim();
         if (!text) throw new Error("text 不能为空");

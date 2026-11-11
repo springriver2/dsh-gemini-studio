@@ -477,19 +477,26 @@ async function pressEscape(session) {
   } catch {}
 }
 
-/** 点加号，确认菜单真的弹出来了 */
+const MENU_OPEN = `document.querySelectorAll("[role='menuitem'],[role='menuitemcheckbox']").length > 0 || !!document.querySelector("[role='menu']")`;
+
+/** 点加号，确认菜单真的弹出来了。
+ *  注意：菜单是开关式的，没弹出来就再点一次会把已经弹出来的关掉，
+ *  所以每次点完要先等几秒确认，再决定要不要重点。 */
 async function openToolsMenu(session) {
-  for (let i = 0; i < 3; i++) {
+  if (await session.evaluate(MENU_OPEN).catch(() => false)) return true;
+  for (let i = 0; i < 2; i++) {
     try {
       await waitFor(session, `!!(${TOOLS_BUTTON})`, 12000, "加号按钮");
       await clickElement(session, TOOLS_BUTTON, "加号按钮");
-      await pause(700, 1400);
-      const opened = await session.evaluate(
-        `document.querySelectorAll("[role='menuitem'],[role='menuitemcheckbox']").length > 0 || !!document.querySelector("[role='menu']")`,
-      );
-      if (opened) return true;
-    } catch {}
-    await pause(600, 1200);
+    } catch {
+      continue;
+    }
+    const opened = await waitFor(session, MENU_OPEN, 5000, "工具菜单")
+      .then(() => true)
+      .catch(() => false);
+    if (opened) return true;
+    await pressEscape(session);
+    await pause(600, 1000);
   }
   return false;
 }
@@ -514,7 +521,7 @@ async function ensureImageSurface(session) {
   const surfaces = ["https://gemini.google.com/app?hl=zh-CN", "https://gemini.google.com/videos?hl=zh-CN"];
   for (const url of surfaces) {
     await session.goto(url);
-    await pause(1600, 2600);
+    await pause(2600, 3800);
     try {
       await waitFor(session, `!!document.querySelector(".ql-editor")`, 30000, "输入框就绪");
     } catch {
@@ -850,6 +857,11 @@ let activeSemi = false;
 // 这是"最稳"和"最快"之间的取舍点，改这几个环境变量就能放开。
 const MIN_GAP_MS = Number(process.env.MIN_GAP_SECONDS || 90) * 1000;
 const DAILY_CAP = Number(process.env.DAILY_CAP || 8);
+// 出图：内部等 4 分钟，硬上限 5 分钟；视频：内部 10 分钟，硬上限 12 分钟。
+// 硬上限的用处是页面卡死时强制释放账号，别让 busy 一直挂着。
+const IMAGE_WAIT_MS = Number(process.env.IMAGE_WAIT_SECONDS || 240) * 1000;
+const IMAGE_HARD_MS = Number(process.env.IMAGE_HARD_SECONDS || 300) * 1000;
+const VIDEO_HARD_MS = Number(process.env.VIDEO_HARD_SECONDS || 720) * 1000;
 const today = () => new Date().toISOString().slice(0, 10);
 
 function usedToday(a) {
@@ -902,6 +914,31 @@ async function runTask(task) {
     await ensureChrome(account);
     session = await Session.open(account.port);
     activeSemi = !!task.semi;
+    // 硬超时：页面卡死时靠它兜底，否则 busy 会一直被占着
+    const hardMs = task.kind === "image" ? IMAGE_HARD_MS : VIDEO_HARD_MS;
+    task.timer = setTimeout(() => {
+      if (task.status === "completed" || task.status === "failed") return;
+      log(`[${task.id}] 超过 ${Math.round(hardMs / 60000)} 分钟，强制结束`);
+      task.error = task.error || new Error(`生成超过 ${Math.round(hardMs / 60000)} 分钟仍未完成（页面可能卡住），已强制结束`);
+      try {
+        session?.close();
+      } catch {}
+    }, hardMs);
+
+    if (task.kind === "image") {
+      log(`[${task.id}] ${account.name} 出图中：${task.prompt.slice(0, 26)}`);
+      const shot = await runImage(session, task.prompt, IMAGE_WAIT_MS, task.imagePaths || []);
+      const file = path.join(OUT, `${task.id}.png`);
+      fs.writeFileSync(file, shot.bytes);
+      task.file = file;
+      task.width = shot.width;
+      task.height = shot.height;
+      task.status = "completed";
+      markUsed(account.id);
+      log(`[${task.id}] 出图 ${shot.width}x${shot.height} ${(shot.bytes.length / 1024).toFixed(0)} KB（${account.name}）`);
+      return;
+    }
+
     log(`[${task.id}] ${account.name} 生成中：${task.prompt.slice(0, 26)}`);
     const cid = await startGeneration(session, task.prompt, task.imagePaths || [], task.aspect || "");
     task.conversation = cid;
@@ -944,6 +981,7 @@ async function runTask(task) {
     if (err instanceof QuotaError) markBlocked(account.id);
     log(`[${task.id}] 失败：${task.error}`);
   } finally {
+    if (task.timer) clearTimeout(task.timer);
     busy.delete(account.id);
     activeSemi = false;
     session?.close();
@@ -954,6 +992,37 @@ async function runTask(task) {
 // 全局串行：一次只让一个账号动，两次提交之间隔 MIN_GAP_MS + 随机尾巴。
 let nextDispatchAt = 0;
 let pumpTimer = null;
+
+function schedulePump(ms) {
+  if (pumpTimer) return;
+  pumpTimer = setTimeout(() => {
+    pumpTimer = null;
+    pump();
+  }, ms);
+}
+
+function failQueued(reason) {
+  for (const q of [...tasks.values()]) {
+    if (q.status !== "queued") continue;
+    q.status = "failed";
+    q.error = reason;
+    log(`[${q.id}] 失败：${reason}`);
+  }
+}
+
+function noAccountReason(pool) {
+  const now = Date.now();
+  const capped = pool.filter((a) => overDailyCap(a));
+  if (capped.length === pool.length) {
+    return `所有账号今天的额度都用完了（上限 ${DAILY_CAP}/天），等明天恢复或再加一个号`;
+  }
+  const coolingUntil = pool.map((a) => a.blockedUntil || 0).filter((t) => t > now);
+  if (coolingUntil.length) {
+    const soon = Math.min(...coolingUntil);
+    return `账号都在冷却，最早 ${new Date(soon).toLocaleTimeString("zh-CN", { hour12: false })} 恢复`;
+  }
+  return "没有可用账号（都在生成中或已停用）";
+}
 
 function pump() {
   if (busy.size > 0) return;
@@ -971,9 +1040,24 @@ function pump() {
   const t = [...tasks.values()].find((x) => x.status === "queued");
   if (!t) return;
   const pool = loadAccounts();
+  if (!pool.length) {
+    failQueued("还没有绑定任何账号：先在「Gemini 工作室」面板里添加账号并由本人登录");
+    return;
+  }
   const account = t.pinnedAccount ? pool.find((a) => a.id === t.pinnedAccount) : pickAccount(pool);
-  if (!account) return;
-  if (busy.has(account.id) || (account.blockedUntil || 0) > Date.now() || overDailyCap(account)) return;
+  if (!account) {
+    // 还有任务在跑 → 等它释放；一个都没在跑却没人可用 → 直接判失败，别让调用方干等
+    if (busy.size > 0) {
+      schedulePump(20000);
+      return;
+    }
+    failQueued(noAccountReason(pool));
+    return;
+  }
+  if (busy.has(account.id) || (account.blockedUntil || 0) > Date.now() || overDailyCap(account)) {
+    schedulePump(20000);
+    return;
+  }
 
   t.accountId = account.id;
   t.account = account.name;
@@ -1201,7 +1285,21 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ok: true });
   }
 
-  if ((route === "/generate-text" || route === "/generate-image") && req.method === "POST") {
+  if (route === "/generate-image" && req.method === "POST") {
+    const body = await readJson(req);
+    const prompt = String(body.prompt || "").trim();
+    if (!prompt) return json(res, 400, { error: "prompt 不能为空" });
+    const accounts = loadAccounts();
+    if (!accounts.length) return json(res, 400, { error: "还没有绑定任何账号：先在「Gemini 工作室」面板里添加账号并由本人登录" });
+    const imagePaths = await materializeImages(body.images, "in");
+    const id = Math.random().toString(36).slice(2, 10);
+    tasks.set(id, { id, kind: "image", prompt, imagePaths, status: "queued", createdAt: Date.now() });
+    log(`[${id}] 出图任务入队（前面还有 ${[...tasks.values()].filter((t) => t.status === "queued" || t.status === "running").length - 1} 个）`);
+    pump();
+    return json(res, 200, { id, status: "queued", url: null });
+  }
+
+  if (route === "/generate-text" && req.method === "POST") {
     const body = await readJson(req);
     const prompt = String(body.prompt || "").trim();
     const hasMessages = Array.isArray(body.messages) && body.messages.length > 0;
@@ -1215,28 +1313,10 @@ const server = http.createServer(async (req, res) => {
     try {
       await ensureChrome(account);
       session = await Session.open(account.port);
-      if (route === "/generate-text") {
-        const messages = Array.isArray(body.messages) ? body.messages : [{ role: "user", content: prompt }];
-        const text = await runText(session, messages, 180000);
-        markUsed(account.id);
-        return json(res, 200, { text, account: account.name });
-      }
-      const refPaths = await materializeImages(body.images, "ref");
-      const shot = await runImage(session, prompt, 300000, refPaths);
+      const messages = Array.isArray(body.messages) ? body.messages : [{ role: "user", content: prompt }];
+      const text = await runText(session, messages, 180000);
       markUsed(account.id);
-      const id = `img_${Date.now()}`;
-      const file = path.join(OUT, `${id}.png`);
-      fs.writeFileSync(file, shot.bytes);
-      log(`  出图 ${shot.width}x${shot.height} ${(shot.bytes.length / 1024).toFixed(0)} KB`);
-      return json(res, 200, {
-        id,
-        file,
-        bytes: shot.bytes.length,
-        width: shot.width,
-        height: shot.height,
-        url: `http://127.0.0.1:${PORT}/media/${id}.png`,
-        account: account.name,
-      });
+      return json(res, 200, { text, account: account.name });
     } catch (e) {
       let err = e;
       if (!(e instanceof QuotaError) && session) {
@@ -1253,7 +1333,8 @@ const server = http.createServer(async (req, res) => {
 
   const imgMatch = route.match(/^\/media\/([\w-]+)\.png$/);
   if (imgMatch) {
-    const f = path.join(OUT, `${imgMatch[1]}.png`);
+    const t = tasks.get(imgMatch[1]);
+    const f = t?.file && t.file.endsWith(".png") ? t.file : path.join(OUT, `${imgMatch[1]}.png`);
     if (!fs.existsSync(f)) return json(res, 404, { error: "文件不存在" });
     res.writeHead(200, { "content-type": "image/png", "access-control-allow-origin": "*" });
     return fs.createReadStream(f).pipe(res);
@@ -1282,6 +1363,7 @@ const server = http.createServer(async (req, res) => {
     const id = Math.random().toString(36).slice(2, 10);
     const task = {
       id,
+      kind: "video",
       prompt,
       imagePaths,
       aspect: String(body.aspect || ""),
@@ -1299,12 +1381,16 @@ const server = http.createServer(async (req, res) => {
   if (taskMatch) {
     const t = tasks.get(taskMatch[1]);
     if (!t) return json(res, 404, { error: "任务不存在" });
+    const ext = t.kind === "image" ? "png" : "mp4";
     return json(res, 200, {
       id: t.id,
+      kind: t.kind || "video",
       status: t.status,
       account: t.account || null,
-      error: t.error || null,
-      url: t.file ? `http://127.0.0.1:${PORT}/media/${t.id}.mp4` : null,
+      error: t.error ? String(t.error.message || t.error) : null,
+      width: t.width || null,
+      height: t.height || null,
+      url: t.file ? `http://127.0.0.1:${PORT}/media/${t.id}.${ext}` : null,
     });
   }
 
