@@ -1,5 +1,13 @@
 # 变更记录
 
+## 0.3.7
+
+- 修 `bridgePort` 改端口不生效（桥进程没收到 `BRIDGE_PORT`）
+- 修 `short_compose` 在新机器上找不到 `studio.mjs`（改用插件内置的那份兜底）
+- ffmpeg 解析补上插件目录与常见 Homebrew 路径，找不到时给安装提示
+- 账号为空时不再报"冷却或被占用"，改为提示去面板添加账号
+- 声明 `engines.node >= 22`；桥日志改写到 `~/.dsh/gemini-studio/bridge.log`
+
 ## 0.3.6
 
 - 图片入口自动在两个页面找（`/app` → `/videos`），不再只认 `/app`

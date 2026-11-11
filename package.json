@@ -1,6 +1,6 @@
 {
   "name": "dsh-gemini-studio",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "type": "module",
   "description": "在 DeepSeek Harness 里用自己已登录的 Gemini 网页账号出图出片，并在本机合成带转场/配音/字幕的成片。",
   "exports": {
@@ -56,5 +56,8 @@
     "type": "git",
     "url": "https://github.com/springriver2/dsh-gemini-studio.git"
   },
-  "homepage": "https://github.com/springriver2/dsh-gemini-studio#readme"
+  "homepage": "https://github.com/springriver2/dsh-gemini-studio#readme",
+  "engines": {
+    "node": ">=22"
+  }
 }

@@ -68,10 +68,11 @@ export function apply(ctx, config = {}) {
     starting = (async () => {
       const entry = path.join(cfg.bridgeDir, "bridge.mjs");
       if (!fs.existsSync(entry)) throw new Error(`找不到桥：${entry}`);
-      const logFile = path.join(cfg.bridgeDir, "out", "bridge.log");
-      fs.mkdirSync(path.dirname(logFile), { recursive: true });
+      const logDir = path.join(os.homedir(), ".dsh", "gemini-studio");
+      fs.mkdirSync(logDir, { recursive: true });
+      const logFile = path.join(logDir, "bridge.log");
       const out = fs.openSync(logFile, "a");
-      const env = { ...process.env };
+      const env = { ...process.env, BRIDGE_PORT: String(cfg.bridgePort) };
       // 宿主是 Electron 时 execPath 指向 App 本体，得让它以纯 node 身份跑这个脚本
       if (process.versions.electron) env.ELECTRON_RUN_AS_NODE = "1";
       const child = spawn(process.execPath || "node", [entry], {
@@ -954,8 +955,14 @@ export function apply(ctx, config = {}) {
     const ws = path.dirname(outputRoot());
     const projectDir = path.resolve(projectArg);
     if (!fs.existsSync(projectDir)) throw new Error(`项目目录不存在：${projectDir}`);
-    const studio = path.join(ws, ".agents", "skills", "video-production", "scripts", "studio.mjs");
-    if (!fs.existsSync(studio)) throw new Error(`找不到技能脚本：${studio}`);
+    const studioCandidates = [
+      path.join(ws, ".agents", "skills", "video-production", "scripts", "studio.mjs"),
+      path.join(PLUGIN_DIR, "skills-video-production", "scripts", "studio.mjs"),
+    ];
+    const studio = studioCandidates.find((p) => fs.existsSync(p));
+    if (!studio) {
+      throw new Error(`找不到制作脚本 studio.mjs，试过：\n${studioCandidates.join("\n")}`);
+    }
 
     const mode = opts.mode === "preview" ? "preview" : "production";
     const plan = JSON.parse(await runNode([studio, "edit-plan", projectDir, mode], 180000));
@@ -1157,11 +1164,15 @@ export function apply(ctx, config = {}) {
 
   function ffmpegBin() {
     const ws = path.dirname(outputRoot());
-    for (const candidate of [
+    const candidates = [
       path.join(ws, "tools", "ffmpeg", "node_modules", "ffmpeg-static", "ffmpeg"),
-      "ffmpeg",
-    ]) {
-      if (candidate === "ffmpeg" || fs.existsSync(candidate)) return candidate;
+      path.join(PLUGIN_DIR, "node_modules", "ffmpeg-static", "ffmpeg"),
+      "/opt/homebrew/bin/ffmpeg",
+      "/usr/local/bin/ffmpeg",
+      "/usr/bin/ffmpeg",
+    ];
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) return candidate;
     }
     return "ffmpeg";
   }
@@ -1180,7 +1191,7 @@ export function apply(ctx, config = {}) {
       }, timeoutMs);
       child.on("error", (e) => {
         clearTimeout(timer);
-        reject(new Error(`找不到 ffmpeg：${e.message}`));
+        reject(new Error(`找不到 ffmpeg（${e.message}）。装一个静态版：cd 到工作区后 npm i ffmpeg-static，或用 brew install ffmpeg`));
       });
       child.on("close", (code) => {
         clearTimeout(timer);
