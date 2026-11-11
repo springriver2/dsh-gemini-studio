@@ -163,6 +163,12 @@ dsh-gemini-studio/
 MIT。`py/` 下三个脚本来自 [dsh-video-pipeline](https://www.npmjs.com/package/dsh-video-pipeline)（MIT），
 详见 [THIRD-PARTY.md](THIRD-PARTY.md)。
 
+## 参与
+
+- 有问题请开 [Issue](https://github.com/springriver2/dsh-gemini-studio/issues/new/choose)
+- 想改代码请先看 [CONTRIBUTING.md](CONTRIBUTING.md)，走 Fork + PR
+- 提 Issue 前先翻 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
+
 ## 免责
 
 本项目只做「把你自己的账号、你自己的内容变成视频」这一件事，不含任何绕过付费或共享账号的功能。

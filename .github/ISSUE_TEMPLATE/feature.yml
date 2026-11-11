@@ -1,0 +1,15 @@
+name: 提个需求
+description: 想要的新能力
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: 你想解决什么
+      description: 说场景，不用说实现
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: 你想到的做法（可选）

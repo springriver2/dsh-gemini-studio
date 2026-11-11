@@ -1,0 +1,45 @@
+name: 报一个问题
+description: 生成失败 / 装不上 / 面板打不开
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        先看 [docs/TROUBLESHOOTING.md](https://github.com/springriver2/dsh-gemini-studio/blob/main/docs/TROUBLESHOOTING.md)，
+        里面按症状列了 24 条已知问题。**不要贴 cookie / key / accounts.json**。
+  - type: dropdown
+    id: stage
+    attributes:
+      label: 出问题在哪个环节
+      options:
+        - 安装插件
+        - 绑定 / 登录账号
+        - 生成图片
+        - 生成视频
+        - 合成成片（ffmpeg）
+        - 字幕
+        - 面板 UI
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: 现象
+      description: 你看到什么、期望是什么
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: 报错原文
+      description: 日志或界面提示，原样贴
+      render: text
+  - type: input
+    id: env
+    attributes:
+      label: 环境
+      description: DSH 版本 / macOS / Chrome 版本
+      placeholder: e.g. DSH 0.2.1-rc.5 · macOS 15.2 · Chrome 157
+    validations:
+      required: true
