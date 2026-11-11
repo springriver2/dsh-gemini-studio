@@ -1207,6 +1207,7 @@ const server = http.createServer(async (req, res) => {
     const hasMessages = Array.isArray(body.messages) && body.messages.length > 0;
     if (!prompt && !hasMessages) return json(res, 400, { error: "prompt 或 messages 不能为空" });
     const accounts = loadAccounts();
+    if (!accounts.length) return json(res, 400, { error: "还没有绑定任何账号：先在「Gemini 工作室」面板里添加账号并由本人登录" });
     const account = pickAccount(accounts);
     if (!account) return json(res, 429, { error: "所有 Gemini 账号都在冷却或被占用" });
     busy.add(account.id);
@@ -1272,6 +1273,8 @@ const server = http.createServer(async (req, res) => {
       if ((pinned.blockedUntil || 0) > Date.now()) return json(res, 429, { error: "该账号在冷却中" });
       if (overDailyCap(pinned)) return json(res, 429, { error: `该账号今天已达上限（${DAILY_CAP}）` });
       pinnedAccount = pinned.id;
+    } else if (!loadAccounts().length) {
+      return json(res, 400, { error: "还没有绑定任何账号：先在「Gemini 工作室」面板里添加账号并由本人登录" });
     } else if (!pickAccount(loadAccounts())) {
       return json(res, 429, { error: "所有 Gemini 账号都在冷却或被占用", accounts: accountView() });
     }
