@@ -38,7 +38,11 @@ window.__ModuleLoader__.load({
   cursor:pointer;transition:border-color .15s,opacity .15s}
 .gs-btn:hover{border-color:var(--dsw-alias-brand-primary)}
 .gs-btn:disabled{opacity:.45;cursor:default}
-.gs-btn-primary{background:var(--dsw-alias-brand-primary);border-color:transparent;color:#fff;font-weight:600}
+/* 深色主题下 brand-primary 是浅色，写死白字会变成"白底白字"看不见；
+   用 bg-base 当正文字色，两种主题都自动对比 */
+.gs-btn-primary{background:var(--dsw-alias-brand-primary);border-color:transparent;
+  color:var(--dsw-alias-bg-base,#fff);font-weight:600}
+.gs-btn-primary:hover:not(:disabled){opacity:.9;border-color:transparent}
 .gs-input,.gs-area{width:100%;box-sizing:border-box;background:var(--dsw-alias-bg-base);
   border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-primary);border-radius:8px;
   padding:8px 10px;font:inherit;outline:none}
