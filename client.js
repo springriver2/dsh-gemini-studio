@@ -38,6 +38,8 @@ window.__ModuleLoader__.load({
   cursor:pointer;transition:border-color .15s,opacity .15s}
 .gs-btn:hover{border-color:var(--dsw-alias-brand-primary)}
 .gs-btn:disabled{opacity:.45;cursor:default}
+.gs-btn-danger{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-border-l1)}
+.gs-btn-danger:hover{border-color:var(--dsw-alias-state-error-primary)}
 /* 深色主题下 brand-primary 是浅色，写死白字会变成"白底白字"看不见；
    用 bg-base 当正文字色，两种主题都自动对比 */
 .gs-btn-primary{background:var(--dsw-alias-brand-primary);border-color:transparent;
@@ -288,6 +290,14 @@ window.__ModuleLoader__.load({
                         className: 'gs-btn',
                         onClick: () => act('/accounts/' + a.id + '/reset', { method: 'POST' }, a.name + ' 冷却已解除'),
                       }, '解冷却'),
+                    h('button', {
+                      className: 'gs-btn gs-btn-danger',
+                      title: '从列表移除；登录态目录保留，重新添加同名账号还能接着用',
+                      onClick: () => {
+                        if (!window.confirm('移除账号「' + a.name + '」？\n\n只会从列表里去掉，Chrome 登录态目录保留，不会退出登录。')) return;
+                        act('/accounts/' + a.id, { method: 'DELETE' }, a.name + ' 已从列表移除');
+                      },
+                    }, '移除'),
                   ),
                 ),
             h(
