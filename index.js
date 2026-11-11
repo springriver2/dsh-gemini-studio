@@ -1329,6 +1329,50 @@ export function apply(ctx, config = {}) {
     }
   }
 
+  // ---------------------------------------------------------------- 系统权限
+  // 面板上直接告诉用户缺什么权限，并给一个跳到对应设置页的按钮。
+
+  let permCache = { at: 0, accessibility: null };
+
+  function checkAccessibility(force = false) {
+    if (!force && Date.now() - permCache.at < 60000 && permCache.accessibility !== null) {
+      return Promise.resolve(permCache.accessibility);
+    }
+    return new Promise((resolve) => {
+      if (process.platform !== "darwin") {
+        permCache = { at: Date.now(), accessibility: true };
+        return resolve(true);
+      }
+      const child = spawn("osascript", ["-e", 'tell application "System Events" to keystroke ""'], {
+        stdio: ["ignore", "ignore", "pipe"],
+      });
+      let err = "";
+      child.stderr.on("data", (d) => (err += d.toString()));
+      child.on("error", () => resolve(false));
+      child.on("close", (code) => {
+        const ok = code === 0 && !/not allowed|not authorized|assistive access|-1719|-1743/i.test(err);
+        permCache = { at: Date.now(), accessibility: ok };
+        resolve(ok);
+      });
+    });
+  }
+
+  const SETTINGS_URLS = {
+    accessibility: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+    automation: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
+  };
+
+  function openSettings(target) {
+    const url = SETTINGS_URLS[target] || SETTINGS_URLS.accessibility;
+    if (process.platform !== "darwin") return false;
+    try {
+      spawn("open", [url], { stdio: "ignore", detached: true }).unref();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function outputRoot() {
     const dirs = workspaceDirs();
     for (const d of dirs) {
@@ -1504,6 +1548,10 @@ export function apply(ctx, config = {}) {
             jobs: [...uiJobs.values()].slice(-20).reverse(),
             outDir: outputRoot(),
             tts: { configured: !!tts.key, source: tts.source },
+            permissions: {
+              platform: process.platform,
+              accessibility: await checkAccessibility(),
+            },
           });
         }
 
@@ -1527,6 +1575,11 @@ export function apply(ctx, config = {}) {
         if (acct && !acct[2] && req.method === "DELETE") {
           await call(`/accounts/${acct[1]}`, { method: "DELETE" });
           return send(200, { ok: true });
+        }
+
+        if (route === "/open-settings" && req.method === "POST") {
+          const body = await readBody();
+          return send(200, { ok: openSettings(String(body.target || "accessibility")) });
         }
 
         if (route === "/tts-key" && req.method === "POST") {

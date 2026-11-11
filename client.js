@@ -233,6 +233,20 @@ window.__ModuleLoader__.load({
         }
       };
 
+      const perm = state.permissions;
+      const openSettings = async (target) => {
+        try {
+          const r = await api('/open-settings', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ target }),
+          });
+          setNotice(r.ok ? '已打开系统设置，找到 DeepSeek Harness 并勾上' : '这个平台不需要该系统设置');
+        } catch (e) {
+          setErr(String(e.message || e));
+        }
+      };
+
       const accounts = state.accounts || [];
       const works = state.works || [];
 
@@ -373,6 +387,38 @@ window.__ModuleLoader__.load({
             job &&
               job.status === 'running' &&
               h('div', { className: 'gs-note' }, '正在生成…已等 ' + Math.round((Date.now() - (job.startedAt || Date.now())) / 1000) + ' 秒'),
+          ),
+
+          h(
+            'div',
+            { className: 'gs-card' },
+            h('h2', null, '系统权限'),
+            h(
+              'div',
+              { className: 'gs-acct', style: { borderTop: 0, paddingTop: 0 } },
+              h('span', { className: 'gs-dot ' + (perm && perm.accessibility ? 'ok' : 'busy') }),
+              h('span', { className: 'gs-name' }, '辅助功能'),
+              h(
+                'span',
+                { className: 'gs-mail gs-grow' },
+                perm && perm.accessibility
+                  ? '已授权：可以自动把首帧填进文件框'
+                  : '未授权：带首帧的生成会失败或退化成纯文生视频',
+              ),
+              h('button', {
+                className: 'gs-btn',
+                onClick: () => openSettings('accessibility'),
+              }, '打开设置'),
+              h('button', {
+                className: 'gs-btn',
+                onClick: () => openSettings('automation'),
+              }, '自动化设置'),
+            ),
+            h(
+              'div',
+              { className: 'gs-note' },
+              '只需要「辅助功能」和「自动化」，不需要屏幕录制、也不需要完全磁盘访问。授权对象是 DeepSeek Harness 这个 App，不是 Chrome。',
+            ),
           ),
 
           h(
