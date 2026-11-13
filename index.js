@@ -992,8 +992,11 @@ export function apply(ctx, config = {}) {
     }
 
     const projectJson = JSON.parse(fs.readFileSync(path.join(projectDir, "project.json"), "utf8"));
-    // native：直接用镜头自带的同期声（Gemini 生成时就念了台词），不再叠 TTS
-    const nativeAudio = !opts.mute && projectJson.audioMode === "native";
+    // 声音模式：镜头级 > 项目级 > 默认 native。
+    // 默认是 native（Gemini 生成时就念了台词），只有显式写 post 才去叠 TTS。
+    const effectiveAudio = projectJson.audioMode ?? "native";
+    // native：直接用镜头自带的同期声，不再叠 TTS
+    const nativeAudio = !opts.mute && effectiveAudio === "native";
 
     const fps = Number(plan.fps) || 24;
     const aspect = plan.aspect === "9:16" ? "9:16" : plan.aspect === "1:1" ? "1:1" : "16:9";
@@ -1038,6 +1041,13 @@ export function apply(ctx, config = {}) {
         lastAudioEnd = Math.max(lastAudioEnd, delaySec + vd);
       }
       cursor += item.durationInFrames;
+    }
+
+    if (!opts.mute && !nativeAudio && !audio.length && plan.items.some((i) => (i.dialogue || []).length)) {
+      throw new Error(
+        "这个项目设成了后配声音（post），但 assets/voices/ 里没有对应配音。先用 tts_generate 生成 wav 并命名成 <镜号>.wav；" +
+        "如果本来就想用 Gemini 原声，把 project.json 的 audioMode 改成 native（或删掉这个字段）",
+      );
     }
 
     const videoLen = cursor / fps - overlapTotal;
