@@ -816,9 +816,16 @@ export function apply(ctx, config = {}) {
       const media = path.join(projectDir, att.media.path);
       const mediaDur = Number(att.media.duration) || 0;
       const target = Math.min(Number(shot.editSeconds) || 7.5, mediaDur);
-      const runs = await silenceRuns(media);
-      const cut = pickCut(runs, target, mediaDur, Number(opts.maxExtend ?? 3));
-      const newDur = Math.max(1, Math.min(mediaDur - 0.05, cut)) ;
+      // Gemini 一条就是 10 秒，剪太短会把人声切断。默认整条用满，
+      // 只有显式 full:false 才按停顿收短。
+      let newDur;
+      if (opts.full === false) {
+        const runs = await silenceRuns(media);
+        const cut = pickCut(runs, target, mediaDur, Number(opts.maxExtend ?? 2.5));
+        newDur = Math.max(1, Math.min(mediaDur - 0.05, cut));
+      } else {
+        newDur = Math.max(1, mediaDur - 0.05);
+      }
       shot.editSeconds = Math.round(newDur * 10) / 10;
       rows.push({ id: shot.id, from: target, to: shot.editSeconds, extended: shot.editSeconds > target + 0.05 });
     }
@@ -830,7 +837,8 @@ export function apply(ctx, config = {}) {
     ctx.tools.register({
       name: "retime_shots",
       description:
-        "按每个镜头的实际人声收尾重排剪入时长：用静音检测找自然停顿，避免人物话没说完就切。\n" +
+        "按每个镜头的实际人声收尾重排剪入时长。\n" +
+        "默认整条用满（Gemini 一条 10 秒，剪短会切断人声）；full:false 时改用静音检测找自然停顿收短。\n" +
         "只改 storyboard.json 的 editSeconds（不会动素材），改完要重新验收再出片。" +
         "原生语音（Gemini 自己念台词）时尤其需要这一步。",
       parameters: {
@@ -839,7 +847,8 @@ export function apply(ctx, config = {}) {
         required: ["project"],
         properties: {
           project: { type: "string", description: "项目目录" },
-          max_extend: { type: "number", description: "最多在原计划后面多留几秒找停顿，默认 3" },
+          max_extend: { type: "number", description: "full=false 时最多在原计划后面多留几秒找停顿，默认 2.5" },
+          full: { type: "boolean", description: "默认 true：整条用完（Gemini 出品就 10 秒，剪短会切断人声）；false 则按停顿收短" },
         },
       },
       output: {
@@ -875,7 +884,7 @@ export function apply(ctx, config = {}) {
         let dir = String(args.project || "").trim();
         if (!dir) throw new Error("project 不能为空");
         if (!path.isAbsolute(dir)) dir = path.resolve(await workspaceDir(exec.agent, exec.signal), dir);
-        const rows = await retimeProject(dir, { maxExtend: args.max_extend });
+        const rows = await retimeProject(dir, { maxExtend: args.max_extend, full: args.full !== false });
         const total = rows.reduce((sum, r) => sum + r.to, 0);
         return { rows, total: Math.round(total * 10) / 10 };
       },
@@ -1664,30 +1673,36 @@ export function apply(ctx, config = {}) {
 
   // 把内置的制作规范注册成技能，装完插件就能用，不用手动拷 .agents/skills
   ctx.inject(["skills"], (inner) => {
-    try {
-      const skillDir = path.join(PLUGIN_DIR, "skills-video-production");
-      const entry = path.join(skillDir, "SKILL.md");
-      if (!fs.existsSync(entry)) return;
-      const raw = fs.readFileSync(entry, "utf8");
-      const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
-      if (!m) return;
-      const meta = {};
-      for (const line of m[1].split("\n")) {
-        const kv = line.match(/^([a-zA-Z-]+):\s*(.+)$/);
-        if (kv) meta[kv[1]] = kv[2].trim();
+    // 包里带了几个技能（skills-<名字>/SKILL.md），全部注册，装插件即生效
+    const dirs = fs
+      .readdirSync(PLUGIN_DIR, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && d.name.startsWith("skills-"))
+      .map((d) => path.join(PLUGIN_DIR, d.name));
+    for (const skillDir of dirs) {
+      try {
+        const entry = path.join(skillDir, "SKILL.md");
+        if (!fs.existsSync(entry)) continue;
+        const raw = fs.readFileSync(entry, "utf8");
+        const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
+        if (!m) continue;
+        const meta = {};
+        for (const line of m[1].split("\n")) {
+          const kv = line.match(/^([a-zA-Z-]+):\s*(.+)$/);
+          if (kv) meta[kv[1]] = kv[2].trim();
+        }
+        if (!meta.name || !meta.description) continue;
+        inner.effect(() =>
+          inner.skills.register({
+            name: meta.name,
+            description: meta.description,
+            content: m[2].trim(),
+            resourceBase: { kind: "directory", path: skillDir },
+            source: "custom",
+          }),
+        );
+      } catch (e) {
+        console.error(`[gemini-studio] 技能注册失败（${skillDir}）：${e.message}`);
       }
-      if (!meta.name || !meta.description) return;
-      inner.effect(() =>
-        inner.skills.register({
-          name: meta.name,
-          description: meta.description,
-          content: m[2].trim(),
-          resourceBase: { kind: "directory", path: skillDir },
-          source: "custom",
-        }),
-      );
-    } catch (e) {
-      console.error(`[gemini-studio] 技能注册失败：${e.message}`);
     }
   });
 

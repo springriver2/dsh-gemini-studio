@@ -74,8 +74,8 @@ short_compose(project="projects/xxx")
 
 | 方案 | 怎么做 | 优点 | 代价 |
 | --- | --- | --- | --- |
-| **原生语音**（推荐做口播） | `project.json` 的 `audioMode` 设 `native`，台词写进 `dialogue`；Gemini 生成时直接念 | 口型天然对得上，不用配音 | 每镜独立生成，音色可能漂；必须人工试听 |
-| **后配 TTS** | `audioMode` 设 `post`，`tts_generate` 生成 wav 放 `assets/voices/<镜号>.wav` | 一个音色，前后绝对一致 | 口型对不上——画面里的人**不能张嘴** |
+| **原生语音**（默认，口播/带货都用它） | `project.json` 的 `audioMode` 设 `native`，台词写进 `dialogue`；Gemini 生成时直接念 | 口型天然对得上，不用配音 | 每镜独立生成，音色可能漂；必须人工试听 |
+| **后配 TTS**（仅用户明确要旁白时） | `audioMode` 设 `post`，`tts_generate` 生成 wav 放 `assets/voices/<镜号>.wav` | 一个音色，前后绝对一致 | 口型对不上——画面里的人**不能张嘴** |
 
 选原生语音时，`short_compose` 会自动保留每条镜头的同期声（视频用 `xfade`、音频用 `acrossfade` 同步过渡），不再混 TTS。
 

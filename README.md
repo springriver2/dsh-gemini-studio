@@ -18,13 +18,19 @@
 | 账号管理 | `gemini_accounts`：添加（弹独立 Chrome 由本人登录）、体检、解冷却、移除 |
 | 配音 | `tts_generate`：MiMo TTS，预置音色 / 文字设计音色 / 样本复刻，支持风格标签 |
 | 分镜直出 | `short_compose`：读分镜和验收记录，自动配转场、配音时间轴、字幕，输出 MP4 |
+| 默认原声 | 人物直接开口说话（Gemini 念台词），音画天然同步；只有用户要旁白时才走 TTS |
 | 手工合成 | `video_compose`（manifest）、`video_assemble`（无声快剪） |
 | 静图运镜 | `image_to_video`：ffmpeg zoompan，不耗 Gemini 额度 |
 | 成片核验 | `media_verify`：分窗能量、音频版本比对、白屏检测 |
 | 剪点重排 | `retime_shots`：按人声收尾把剪入点落到自然停顿上 |
 | 工作台面板 | 侧栏「Gemini 工作室」：账号状态、出图出片、作品墙、MiMo key |
 
-插件还内置了一份短剧制作规范（技能 `video-production`），装完即可用。
+插件内置两份制作规范，装完即可用：
+
+- `video-production`：剧本、十列分镜、逐镜执行卡、镜头生成与合成
+- `video-commerce`：带货短视频，钩子 → 引出商品 → 近景/上身 → 总结引导（通常 30 秒）
+
+两条通用规则：**默认用 Gemini 原声说话**（只有明确要旁白才用 TTS）；**每镜按 10 秒规划**，台词 9 秒内讲完，剪入默认整条用满。
 
 ---
 

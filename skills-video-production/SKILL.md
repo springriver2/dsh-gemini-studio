@@ -35,7 +35,12 @@ description: 在 DSH 里按 video_check 规范制作 AI 视频、漫剧和短剧
 需要手工控制时才降级到 `video_compose`（manifest）或 `video_assemble`（无声快剪）。
 成片必跑 `media_verify`。
 
-配音：有 MiMo key 就用 `tts_generate`（一条配音一个 wav，按 `delay_ms` 排进 manifest）；没有 key 就给用户要 wav，或按无声交付并说明，**不要假装配好了**。
+声音默认走 **Gemini 原声**（`audioMode: native`）：人物真的开口说话，音画天然同步，不用对嘴。
+默认规则：
+
+- 只要画面里有人说话，**一律 native**，台词写进 `dialogue`，一镜一句、每镜 9 秒内讲完
+- 只有用户明确要「旁白 / 画外音」时，才用 `tts_generate` + `audioMode: post`，并且画面里的人**不能张嘴**
+- 没有 MiMo key 且用户要旁白时，给用户要 wav 或按无声交付并说明，**不要假装配好了**
 
 ## 制作流程
 

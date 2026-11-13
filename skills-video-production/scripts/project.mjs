@@ -250,13 +250,19 @@ function dialogueLine(line) {
 
 function promptParts(model, shot) {
   const dialogue = shot.dialogue.map(dialogueLine).join("\n");
-  const audioMode = shot.audioMode ?? model.project.audioMode;
+  // 默认原生语音：Gemini 自己开口说话，音画天然同步，不用后期对嘴。
+  // 只有用户明确要「旁白」时才走 TTS（audioMode: post），那时画面里的人不能开口。
+  const audioMode = shot.audioMode ?? model.project.audioMode ?? "native";
+  const seconds = Number(shot.requestSeconds) || 10;
   const spoken = shot.dialogue.map((line) => line.text).filter(Boolean);
   const audio = audioMode === "native"
     ? [
         spoken.length
-          ? `只念下面这句台词，念完立刻停下保持安静。不要添加任何其他内容，不要念下面任何制作说明。\n台词：「${spoken.join(" / ")}」`
+          ? `整条视频 ${seconds} 秒，请把时长用满。只念下面这句台词，念完立刻停下保持安静——不要添加任何其他内容，不要念下面任何制作说明。\n台词：「${spoken.join(" / ")}」`
           : "无对白。",
+        spoken.length
+          ? `台词必须在 ${Math.max(3, seconds - 1)} 秒内讲完：语速自然、句尾收住留半秒，不要抢拍、不要拖长音、不要被截断。`
+          : "",
         shot.sfx.length ? `音效：${shot.sfx.join("、")}` : "",
       ].filter(Boolean).join("\n")
     : audioMode === "silent" ? "输出无声画面。"
@@ -270,8 +276,8 @@ function promptParts(model, shot) {
 export function prepare(model, id, mode = "bridge") {
   const shot = model.shots.get(id);
   requireValue(shot && [...bridgeModes, ...browserModes].includes(mode), "请提供有效镜号及模式 bridge、browser、dual 或 preview");
-  const audioMode = shot.audioMode ?? model.project.audioMode;
-  requireValue(audioMode !== null && isText(model.project.style), "提交前先确定项目风格与声音模式");
+  const audioMode = shot.audioMode ?? model.project.audioMode ?? "native";
+  requireValue(isText(model.project.style), "提交前先确定项目风格");
   requireValue(!model.project.requireDesignRefs || shot.designRefs?.length, `${id} 请先保存并登记本镜人物、场景或道具设定图`);
   const designRefs = (shot.designRefs ?? []).map((ref) => imageInput(model, ref, model.assets.get(ref).type));
   if (shot.continuityFrom) {
@@ -301,7 +307,7 @@ export function prepare(model, id, mode = "bridge") {
   }
   const parts = promptParts(model, shot);
   const prompt = [
-    `画幅 ${model.project.aspect}${shot.requestSeconds ? `，期望源片时长 ${shot.requestSeconds} 秒` : ""}。\n视觉风格：${model.project.style}`,
+    `画幅 ${model.project.aspect}，期望源片时长 ${Number(shot.requestSeconds) || 10} 秒（请用满，不要提前结束）。\n视觉风格：${model.project.style}`,
     `第一部分｜分镜提示词\n${parts.still}`,
     `第二部分｜视频运动提示词\n${parts.motion}`,
   ].join("\n\n");
