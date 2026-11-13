@@ -291,6 +291,18 @@ window.__ModuleLoader__.load({
                     h('span', { className: 'gs-chip' }, a.busy ? '生成中' : a.hardBlocked ? '需人工' : a.blocked ? '冷却中' : '可用'),
                     h('button', {
                       className: 'gs-btn',
+                      onClick: () => {
+                        const name = window.prompt('给这个账号起个名字（只影响面板显示和 --account）', a.name);
+                        if (!name || !name.trim() || name.trim() === a.name) return;
+                        act('/rename', {
+                          method: 'POST',
+                          headers: { 'content-type': 'application/json' },
+                          body: JSON.stringify({ account: a.id, name: name.trim() }),
+                        }, '已改名为 ' + name.trim());
+                      },
+                    }, '改名'),
+                    h('button', {
+                      className: 'gs-btn',
                       onClick: () =>
                         act('/doctor', {
                           method: 'POST',
@@ -380,6 +392,24 @@ window.__ModuleLoader__.load({
                 { className: 'gs-btn gs-btn-primary', onClick: generate, disabled: busy },
                 busy ? '生成中…' : kind === 'image' ? '生成图片' : '生成视频',
               ),
+              busy &&
+                job &&
+                h('button', {
+                  className: 'gs-btn',
+                  style: { marginLeft: 8 },
+                  onClick: async () => {
+                    try {
+                      await api('/cancel', {
+                        method: 'POST',
+                        headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify({ id: job.id }),
+                      });
+                      setNotice('已请求取消…');
+                    } catch (e) {
+                      setErr(String(e.message || e));
+                    }
+                  },
+                }, '取消'),
             ),
             kind === 'video' &&
               semi &&

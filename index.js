@@ -1618,6 +1618,21 @@ export function apply(ctx, config = {}) {
           return send(200, { ok: true });
         }
 
+        if (route === "/rename" && req.method === "POST") {
+          const body = await readBody();
+          const out = await call(`/accounts/${encodeURIComponent(String(body.account || ""))}/rename`, {
+            method: "POST",
+            body: { name: String(body.name || "") },
+          });
+          return send(200, out);
+        }
+
+        if (route === "/cancel" && req.method === "POST") {
+          const body = await readBody();
+          const out = await call(`/task/${encodeURIComponent(String(body.id || ""))}/cancel`, { method: "POST", body: {} });
+          return send(200, out);
+        }
+
         if (route === "/open-settings" && req.method === "POST") {
           const body = await readBody();
           return send(200, { ok: openSettings(String(body.target || "accessibility")) });

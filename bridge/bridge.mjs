@@ -913,6 +913,7 @@ async function runTask(task) {
   try {
     await ensureChrome(account);
     session = await Session.open(account.port);
+    task.session = session;
     activeSemi = !!task.semi;
     // 硬超时：页面卡死时靠它兜底，否则 busy 会一直被占着
     const hardMs = task.kind === "image" ? IMAGE_HARD_MS : VIDEO_HARD_MS;
@@ -977,10 +978,11 @@ async function runTask(task) {
       else if (/制作视频|视频工具/.test(String(e?.message || ""))) err = new QuotaError("找不到视频入口，通常是该账号额度已用尽");
     }
     task.status = "failed";
-    task.error = String(err?.message || err);
-    if (err instanceof QuotaError) markBlocked(account.id);
-    log(`[${task.id}] 失败：${task.error}`);
+    task.error = task.cancelled ? "已取消" : String(err?.message || err);
+    if (!task.cancelled && err instanceof QuotaError) markBlocked(account.id);
+    log(`[${task.id}] ${task.cancelled ? "已取消" : "失败：" + task.error}`);
   } finally {
+    task.session = null;
     if (task.timer) clearTimeout(task.timer);
     busy.delete(account.id);
     activeSemi = false;
@@ -1246,6 +1248,20 @@ const server = http.createServer(async (req, res) => {
 
   if (route === "/accounts" && req.method === "GET") return json(res, 200, { accounts: accountView() });
 
+  const renameMatch = route.match(/^\/accounts\/([\w-]+)\/rename$/);
+  if (renameMatch && req.method === "POST") {
+    const body = await readJson(req);
+    const name = String(body.name || "").trim();
+    if (!name) return json(res, 400, { error: "名字不能为空" });
+    const accounts = loadAccounts();
+    const a = accounts.find((x) => x.id === renameMatch[1]);
+    if (!a) return json(res, 404, { error: "账号不存在" });
+    if (accounts.some((x) => x.id !== a.id && x.name === name)) return json(res, 409, { error: "已经有同名账号" });
+    a.name = name;
+    saveAccounts(accounts);
+    return json(res, 200, { ok: true, account: accountView().find((x) => x.id === a.id) });
+  }
+
   const resetMatch = route.match(/^\/accounts\/([\w-]+)\/reset$/);
   if (resetMatch && req.method === "POST") {
     const accounts = loadAccounts();
@@ -1375,6 +1391,25 @@ const server = http.createServer(async (req, res) => {
     tasks.set(id, task);
     pump();
     return json(res, 200, { id, status: task.status, account: task.account || null, semi: task.semi });
+  }
+
+  const cancelMatch = route.match(/^\/task\/([\w-]+)\/cancel$/);
+  if (cancelMatch && req.method === "POST") {
+    const t = tasks.get(cancelMatch[1]);
+    if (!t) return json(res, 404, { error: "任务不存在" });
+    if (t.status === "completed" || t.status === "failed") return json(res, 200, { ok: true, status: t.status });
+    t.cancelled = true;
+    if (t.status === "queued") {
+      t.status = "failed";
+      t.error = "已取消";
+    } else {
+      // 正在跑：断掉调试连接，跑任务那边的循环会抛错退出
+      try {
+        t.session?.close();
+      } catch {}
+    }
+    log(`[${t.id}] 已取消`);
+    return json(res, 200, { ok: true, status: t.status });
   }
 
   const taskMatch = route.match(/^\/task\/([\w-]+)$/);
